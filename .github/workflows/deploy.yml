@@ -28,6 +28,9 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       - run: npx vite build && npx playwright test
         env: { BASE: / }
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: playwright-results, path: test-results, retention-days: 7 }
       - run: npx vite build
         env: { BASE: /preparanding-app/ }
       - uses: actions/upload-pages-artifact@v3

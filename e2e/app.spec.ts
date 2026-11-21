@@ -7,15 +7,15 @@ async function setCode(page: Page, code: string) {
   await page.getByRole('tab', { name: 'Código' }).click();
   const content = page.locator('.cm-content');
   await content.click();
-  // Ctrl/Cmd+A no selecciona todo en la emulación de iPhone; un Range del DOM sí, en los dos motores
-  await content.evaluate((el) => {
-    const r = document.createRange();
-    r.selectNodeContents(el);
-    getSelection()!.removeAllRanges();
-    getSelection()!.addRange(r);
-  });
+  // selectAll de CodeMirror (Mod-a) cubre todo el documento; un Range del DOM no, porque
+  // CodeMirror solo pinta las líneas visibles. En iPhone Mod es Cmd (Meta), en Android Ctrl.
+  const mac = await page.evaluate(() => /iPhone|iPad|Mac/.test(navigator.userAgent));
+  await page.keyboard.press(mac ? 'Meta+a' : 'Control+a');
   await page.keyboard.insertText(code);
-  await expect(content).toContainText(code.trim().split('\n')[0]);
+  const lines = code.trim().split('\n');
+  await expect(content).toContainText(lines[0]);
+  await expect(content).toContainText(lines.at(-1)!);
+  await expect(page.locator('.cm-line')).toHaveCount(code.split('\n').length);
 }
 
 async function prepareOffline(page: Page) {
