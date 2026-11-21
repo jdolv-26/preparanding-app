@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+  <meta name="text-scale" content="scale">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F3F5F1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101518" media="(prefers-color-scheme: dark)">
+  <!-- T3/D13: sin HTML crudo en el contenido, sin fetch externo. GitHub Pages no permite cabeceras, por eso va en meta. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="description" content="Práctica diaria de Python, SQL y pandas, offline y verificada.">
+  <title>Preparanding</title>
+</head>
+<body>
+  <a class="skip" href="#main">Saltar al contenido</a>
+  <div class="shell">
+    <nav class="nav" aria-label="Principal">
+      <a href="#/hoy" data-nav="hoy">Hoy</a>
+      <a href="#/mercado" data-nav="mercado">Mercado</a>
+      <a href="#/yo" data-nav="yo">Yo</a>
+    </nav>
+    <main id="main" tabindex="-1"></main>
+  </div>
+  <div id="live" class="sr-only" aria-live="polite"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
