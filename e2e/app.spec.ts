@@ -5,9 +5,17 @@ const rh = items.find((i) => i.id === 'py-rh-limpieza')!;
 
 async function setCode(page: Page, code: string) {
   await page.getByRole('tab', { name: 'Código' }).click();
-  await page.locator('.cm-content').click();
-  await page.keyboard.press('ControlOrMeta+a');
+  const content = page.locator('.cm-content');
+  await content.click();
+  // Ctrl/Cmd+A no selecciona todo en la emulación de iPhone; un Range del DOM sí, en los dos motores
+  await content.evaluate((el) => {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    getSelection()!.removeAllRanges();
+    getSelection()!.addRange(r);
+  });
   await page.keyboard.insertText(code);
+  await expect(content).toContainText(code.trim().split('\n')[0]);
 }
 
 async function prepareOffline(page: Page) {
