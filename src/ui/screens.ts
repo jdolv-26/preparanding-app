@@ -1,6 +1,7 @@
 import type { Pack } from '../../core/item.ts';
-import { allCards, dueCount, RATINGS, review } from '../cards.ts';
+import { allCards, dueCount, pickCards, RATINGS, review } from '../cards.ts';
 import { events, kv } from '../db.ts';
+import { googleCalendarUrl, ics } from '../reminder.ts';
 import { askPersist, download, mb, missing, persisted } from '../offline.ts';
 import { advance, BLOCKS, clear, current, daysThisWeek, mainItems, passedItems, retired, start, type Session } from '../session.ts';
 import { announce, h, markdown } from './dom.ts';
@@ -22,11 +23,15 @@ async function notice(): Promise<HTMLElement | null> {
 }
 
 export async function hoy(main: Main, pack: Pack) {
-  const [s, toGet, days, due, items] = await Promise.all([current(), missing(pack), daysThisWeek(), dueCount(pack), mainItems(pack)]);
+  const [s, toGet, days, due, items, quick, reminder] = await Promise.all([current(), missing(pack), daysThisWeek(), dueCount(pack), mainItems(pack), pickCards(pack, 3, 5), kv.get<string>('reminder')]);
   const n = items.length;
   const cta = s
     ? h('button', { type: 'button', class: 'primary cta', onclick: () => go('#/sesion') }, `Continuar · ${BLOCKS[Math.min(s.block, 2)]}`)
     : h('button', { type: 'button', class: 'primary cta', onclick: async () => { await start(pack); go('#/sesion'); } }, `Empezar sesión · ~20 min · ${n} ${n === 1 ? 'ítem' : 'ítems'}`);
+  // Sesión corta: baja la barrera de entrada; cuenta como día de práctica igual que la completa.
+  const short = !s && quick.length
+    ? h('button', { type: 'button', class: 'secondary cta', onclick: async () => { await start(pack, 'short'); go('#/sesion'); } }, `Solo 3 minutos · ${quick.length} tarjetas`)
+    : '';
   const offline = toGet.length
     ? h('p', { class: 'offline' }, h('a', { href: '#/preparar' }, `Preparar para usar sin internet (${mb(toGet.reduce((a, f) => a + f.bytes, 0))})`))
     : h('p', { class: 'offline ok' }, h('span', { 'aria-hidden': 'true' }, '✓ '), 'Listo offline');
@@ -34,7 +39,8 @@ export async function hoy(main: Main, pack: Pack) {
     (await notice()) ?? '',
     h('h1', {}, 'Hoy'),
     h('p', { class: 'muted' }, `${due} ${due === 1 ? 'tarjeta vencida' : 'tarjetas vencidas'} · Esta semana: `, h('span', { class: 'mono' }, `${days} de 7 días`)),
-    h('div', { class: 'cta-zone' }, cta, offline),
+    h('div', { class: 'cta-zone' }, cta, short, offline),
+    reminder ? '' : h('p', {}, h('a', { href: '#/yo' }, 'Ponte un recordatorio diario')),
   ));
 }
 
@@ -95,14 +101,15 @@ export async function sesion(main: Main, pack: Pack) {
   const days = await daysThisWeek();
   await clear();
   main.replaceChildren(h('div', { class: 'session close' },
-    h('h1', {}, 'Sesión terminada'),
+    h('h1', {}, s.short ? 'Listo por hoy' : 'Sesión terminada'),
     h('ul', { class: 'summary' },
-      h('li', {}, `Practicaste ${s.stats.items} ${s.stats.items === 1 ? 'ejercicio' : 'ejercicios'} (${s.stats.tests_passed} tests pasados) y ${s.stats.cards} tarjetas.`),
-      h('li', {}, `Quedan para repasar: ${s.stats.new_cards} ${s.stats.new_cards === 1 ? 'tarjeta nueva' : 'tarjetas nuevas'}.`),
+      h('li', {}, s.short ? `Repasaste ${s.stats.cards} tarjetas. El día ya cuenta.` : `Practicaste ${s.stats.items} ${s.stats.items === 1 ? 'ejercicio' : 'ejercicios'} (${s.stats.tests_passed} tests pasados) y ${s.stats.cards} tarjetas.`),
+      s.short ? '' : h('li', {}, `Quedan para repasar: ${s.stats.new_cards} ${s.stats.new_cards === 1 ? 'tarjeta nueva' : 'tarjetas nuevas'}.`),
       h('li', {}, 'Esta semana: ', h('span', { class: 'mono' }, `${days} de 7 días`), '.'),
     ),
     h('p', { class: 'muted' }, h('span', { 'aria-hidden': 'true' }, '✓ '), 'Guardado en este dispositivo.'),
     h('button', { type: 'button', class: 'primary', onclick: () => go('#/hoy') }, 'Volver a Hoy'),
+    s.short ? h('button', { type: 'button', class: 'secondary', onclick: async () => { await start(pack, 'reto'); void sesion(main, pack); } }, 'Ya que estás: un ejercicio (~15 min)') : '',
   ));
   announce('Sesión terminada. Guardado en este dispositivo.');
 }
@@ -205,9 +212,32 @@ export async function yo(main: Main, pack: Pack) {
       h('li', { class: 'mono' }, `${evs.length} eventos · core ${pack.core_version} · pack ${pack.built_at}`),
       h('li', { class: 'mono' }, `Python ${pack.runtime.python} · pandas ${pack.runtime.pandas} · sql.js ${pack.runtime.sqljs}`),
     ),
+    h('h2', { id: 'recordatorio' }, 'Recordatorio diario'),
+    reminderForm(),
     exportBtn,
   ));
 }
+
+// Recordatorio como evento recurrente del calendario del teléfono: avisa aunque la app esté
+// cerrada y sin servidor de push. Google Calendar (Android) o .ics (iPhone y otros).
+function reminderForm(): HTMLElement {
+  const time = h('input', { type: 'time', id: 'rem-time', value: '20:00', required: true }) as HTMLInputElement;
+  void kv.get<string>('reminder').then((t) => { if (t) { time.value = t; time.dispatchEvent(new Event('input')); } });
+  const save = () => kv.set('reminder', time.value);
+  const gcal = h('a', { class: 'secondary', target: '_blank', rel: 'noopener noreferrer', href: googleCalendarUrl(time.value, appUrl()), onclick: () => void save() }, 'Agregar a Google Calendar');
+  time.addEventListener('input', () => gcal.setAttribute('href', googleCalendarUrl(time.value, appUrl())));
+  const file = h('button', { type: 'button', class: 'secondary', onclick: () => {
+    const a = h('a', { href: URL.createObjectURL(new Blob([ics(time.value, appUrl())], { type: 'text/calendar' })), download: 'preparanding-recordatorio.ics' });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    void save();
+  } }, 'Descargar .ics (iPhone y otros)');
+  return h('div', { class: 'reminder' },
+    h('p', { class: 'muted' }, 'Un evento diario en tu calendario con el link a la app. Basta con 3 minutos para que cuente el día.'),
+    h('label', { for: 'rem-time' }, 'Hora '), time, h('div', { class: 'row' }, gcal, file),
+  );
+}
+const appUrl = () => new URL(import.meta.env.BASE_URL, location.origin).href;
 
 export async function libre(main: Main, pack: Pack, id: string) {
   const it = pack.items.find((i) => i.id === id);

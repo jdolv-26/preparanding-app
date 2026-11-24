@@ -15,6 +15,7 @@ export interface Session {
   main: string[];
   review: string[];
   stats: { cards: number; items: number; tests_passed: number; new_cards: number };
+  short?: boolean;          // sesión de 3 minutos: solo tarjetas
 }
 
 export const current = () => kv.get<Session>('session');
@@ -38,12 +39,14 @@ export async function mainItems(pack: Pack, n = 2): Promise<string[]> {
   return [...ok.filter((i) => !done.has(i.id)), ...ok.filter((i) => done.has(i.id))].slice(0, n).map((i) => i.id);
 }
 
-export async function start(pack: Pack): Promise<Session> {
-  const warm = await pickCards(pack, 3, 5);
+// full: calentamiento + reto + repaso · short: solo tarjetas · reto: directo al ejercicio
+export async function start(pack: Pack, kind: 'full' | 'short' | 'reto' = 'full'): Promise<Session> {
+  const short = kind === 'short';
+  const warm = kind === 'reto' ? [] : await pickCards(pack, 3, 5);
   const s: Session = {
     id: crypto.randomUUID(), started: new Date().toISOString(), block: 0, pos: 0,
-    warm, main: await mainItems(pack), review: [],
-    stats: { cards: 0, items: 0, tests_passed: 0, new_cards: 0 },
+    warm, main: short ? [] : await mainItems(pack), review: [],
+    stats: { cards: 0, items: 0, tests_passed: 0, new_cards: 0 }, short,
   };
   if (!s.warm.length) s.block = 1;
   await save(s);
@@ -57,7 +60,8 @@ export async function advance(pack: Pack, s: Session): Promise<Session> {
   else {
     s.pos = 0;
     s.block = (s.block + 1) as Session['block'];
-    if (s.block === 2) {
+    if (s.block === 1 && s.short) s.block = 3;
+    else if (s.block === 2) {
       s.review = await pickCards(pack, 0, 5, s.warm);
       if (!s.review.length) s.block = 3;
     }

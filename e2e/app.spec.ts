@@ -88,3 +88,23 @@ test('sin fetch externo: la CSP bloquea conexiones a otros orígenes', async ({ 
   const blocked = await page.evaluate(() => fetch('https://example.com').then(() => false, () => true));
   expect(blocked).toBe(true);
 });
+
+test('sesión de 3 minutos: solo tarjetas, cuenta el día y ofrece seguir', async ({ page }) => {
+  await page.goto('/#/hoy');
+  await page.getByRole('button', { name: /Solo 3 minutos · 3 tarjetas/ }).click();
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole('button', { name: 'Ver respuesta' }).click();
+    await page.getByRole('button', { name: 'Bien' }).click();
+  }
+  await expect(page.getByRole('heading', { name: 'Listo por hoy' })).toBeVisible();
+  await expect(page.locator('.summary').getByText('1 de 7 días')).toBeVisible();
+  await page.getByRole('button', { name: /un ejercicio/ }).click();
+  await expect(page.getByRole('heading', { name: rh.title })).toBeVisible();
+});
+
+test('recordatorio: link de Google Calendar con la hora elegida', async ({ page }) => {
+  await page.goto('/#/yo');
+  await page.getByLabel('Hora').fill('07:30');
+  const href = await page.getByRole('link', { name: 'Agregar a Google Calendar' }).getAttribute('href');
+  expect(new URL(href!).searchParams.get('dates')).toMatch(/T073000\//);
+});
